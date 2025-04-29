@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 import re
 
 # Paste your MiniZinc output here
@@ -20,12 +21,18 @@ positions = [[5,4], [3,0], [0,4], [14,2], [0,0], [5,6], [13,0], [13,2], [6,0], [
 sizes = [[1,2], [3,4], [5,6], [7,8], [3,3], [6,3], [8,2], [1,4], [7,6], [3,4]]
 """
 
+minizinc_output = """
+total_time = 15
+positions = [[3,0], [2,15], [0,0], [10,0], [9,15], [1,26], [7,31], [12,21], [14,50], [8,70], [11,50], [13,70], [4,31], [5,46], [6,65]]
+sizes = [[5,15], [6,11], [2,5], [5,15], [4,6], [7,5], [8,19], [3,6], [1,20], [4,19], [3,20], [2,20], [2,15], [2,19], [2,19]]
+"""
+
 # Parse positions
 splitted = minizinc_output.split("\n")
 positions = re.findall(r'\[(\d+),(\d+)\]', [x for x in splitted if "positions" in x][0])
 sizes = re.findall(r'\[(\d+),(\d+)\]', [x for x in splitted if "sizes" in x][0])
-positions = [(int(x), int(y)) for x, y in positions]
-sizes = [(int(x), int(y)) for x, y in sizes]
+positions = np.array([(int(x), int(y)) for x, y in positions])
+sizes = np.array([(int(x), int(y)) for x, y in sizes])
 
 # Plot
 fig, ax = plt.subplots()
@@ -36,13 +43,14 @@ for (x, y), (w, h) in zip(positions, sizes):
 
 # Display strip bounds
 total_time = int(re.search(r'total_time\s*=\s*(\d+)', minizinc_output).group(1))
-memsize = 10
-ax.set_xlim(0, total_time + 1)
-ax.set_ylim(0, memsize)
+# memsize = 10
+# print(f"Max sizes {(positions+sizes)[:, 0]} {max((positions+sizes)[:, 0])}")
+ax.set_xlim(0, total_time)
+ax.set_ylim(0, max((positions+sizes)[:, 1]))
 ax.set_aspect('equal')
-ax.set_xlabel("Time / Horizontal Axis")
-ax.set_ylabel("Memory Height")
-plt.title("2D Strip Packing Layout")
+ax.set_xlabel("Time")
+ax.set_ylabel("Memory Space")
+plt.title("2D Strip Packing Memory Layout")
 plt.grid(True)
 plt.tight_layout()
 plt.show()
