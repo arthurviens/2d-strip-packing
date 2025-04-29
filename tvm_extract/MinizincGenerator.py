@@ -5,12 +5,7 @@ from MemBlock import MemBlock
 import numpy as np
 
 
-# IT DOES NOT WORK : sizeX chooses negative integers lol
-# + IDK if the rest of the dependency modeling is sound
-# + it may lack links_to dependencies.
-
-
-def generate_minizinc_model(alloc_finder: AllocationFinder, memory_height: int = 2048) -> str:
+def generate_minizinc_model(alloc_finder: AllocationFinder) -> str:
     """
     Generate a MiniZinc program from AllocationFinder output, modeling 2D strip packing
     with data dependencies and dynamic lifetimes.
@@ -25,7 +20,10 @@ def generate_minizinc_model(alloc_finder: AllocationFinder, memory_height: int =
 
     # Memory footprint: fixed memory size (in 32-byte units)
     sizeY = [max(1, int(np.log2(np.prod(mb.shape)))) for mb in memblocks]
+    sum_sizey = sum(sizeY)
+
     operation_costs = [1 for _ in memblocks]
+    sum_opcost = sum(operation_costs)
 
     # Lifetime constraints
     lifetime_constraints = []
@@ -57,9 +55,9 @@ def generate_minizinc_model(alloc_finder: AllocationFinder, memory_height: int =
 include "alldifferent.mzn";
 
 int: n = {n};
-int: memsize = {memory_height};
+int: memsize = {int(sum_sizey / 2)};
 
-array[1..n] of var 1..: sizeX;  % Time dimension (lifetime)
+array[1..n] of var 1..{5 * n + 5 * sum_opcost}: sizeX;  % Time dimension (lifetime)
 array[1..n] of int: sizeY = [
     {sizeY_arr}
 ];
@@ -67,7 +65,7 @@ array[1..n] of int: op_cost = [
     {op_cost_arr}
 ];
 
-array[1..n] of var 0..: posX;  % Start time
+array[1..n] of var 0..{5 * n + 5 * sum_opcost}: posX;  % Start time
 array[1..n] of var 0..(memsize-1): posY;  % Memory offset
 
 constraint alldifferent([posX[i] | i in 1..n]); % No two allocations / computations at once
