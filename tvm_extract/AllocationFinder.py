@@ -118,7 +118,7 @@ class AllocationFinder(relax.PyExprVisitor):
                 # Dependency modeling: reads → writes
                 write_buffers = [r.buffer for r in stmt.writes]
                 read_buffers = [r.buffer for r in stmt.reads]
-                # if "conv" in stmt.reads:
+
                 for w in write_buffers:
                     # We have to recompute the id of the block to get it from self.id_to_memblock
                     w_memblock_id = MemBlock.compute_id_from_buffer(w, origin="tir." + name_hint + "." + w.name)
@@ -129,9 +129,11 @@ class AllocationFinder(relax.PyExprVisitor):
                     if writer:
                         for r in read_buffers:
                             # We have to recompute the id of the block to get it from self.id_to_memblock
-                            r_memblock_id = MemBlock.compute_id_from_buffer(r, origin="tir." + name_hint + "." + r.name)
+                            r_memblock_id = MemBlock.compute_id_from_buffer(r, origin="tir." + name_hint + "." + r.name)  # Internal tensor of the tir func
                             if r_memblock_id not in self.id_to_memblock.keys():
-                                r_memblock_id = MemBlock.compute_id_from_buffer(r, origin="relax")
+                                r_memblock_id = MemBlock.compute_id_from_buffer(r, origin="tir." + name_hint)  # New param of the tir func
+                            if r_memblock_id not in self.id_to_memblock.keys():
+                                r_memblock_id = MemBlock.compute_id_from_buffer(r, origin="relax")  # Comes from relax func
                             reader = self.id_to_memblock.get(r_memblock_id)
 
                             if reader and reader._id != writer._id:
