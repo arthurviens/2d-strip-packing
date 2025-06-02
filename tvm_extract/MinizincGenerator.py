@@ -5,6 +5,7 @@ from math import ceil
 from typing import List
 from AllocationFinder import AllocationFinder
 from MemBlock import MemBlock
+from collections.abc import Iterable
 import numpy as np
 
 
@@ -12,7 +13,10 @@ def write_dzn(dico):
     total_string = ""
     for key, elt in dico.items():
         if isinstance(elt, list):
-            arr = ",\n    ".join(str(y) for y in elt)  # Join and indent
+            if isinstance(elt[0], Iterable):  # Nested list : 2D array ?
+                arr = "\n    |".join(str(y) for y in elt)
+            else:  # 1D Array
+                arr = ",\n    ".join(str(y) for y in elt)  # Join and indent
             total_string += f"{key} = [\n    {arr}\n];\n"
         else:
             total_string += f"{key} = {elt}\n"
@@ -49,18 +53,24 @@ def generate_minizinc_model(alloc_finder: AllocationFinder, export_name="current
     # Memory footprint: fixed memory size (in 32-byte units)
     # sizeY = [max(1, int(np.log2(np.prod(mb.shape)))) for mb in memblocks]
 
+    index_dep_info: List[str] = []
     # Lifetime constraints
     lifetime_constraints = []
     for mb in memblocks:
         i = mb_index[mb._id]
 
-        # Each jth dependency must remain alive during computation of ith mb
         for dep in mb.depends_on:
             j = mb_index[dep._id]
+            # Each jth dependency must remain alive during computation of ith mb
             lifetime_constraints.append(f"constraint posX[{j}] + sizeX[{j}] >= posX[{i}] + op_cost[{i}];")
+            # the jth dependency must be existing before i is computed
             lifetime_constraints.append(f"constraint posX[{j}] <= posX[{i}];")
+            index_dep_info.append(f"{j},{i}")  # Dep j -> i for plotting
 
     dependency_block = "\n".join(lifetime_constraints)
+    index_dep_info[0] = "|" + index_dep_info[0]
+    index_dep_info[-1] += "|"
+    dzn["index_dep_info"] = index_dep_info
 
     # No too early alloc constraints for nodes with no dependencies (input, params...)
     # This is only useful to reduce the search space
@@ -78,8 +88,10 @@ def generate_minizinc_model(alloc_finder: AllocationFinder, export_name="current
     minizinc_code = f"""
 % Automatically generated MiniZinc model from TVM AllocationFinder
 include "diffn_k.mzn";
+include "alldifferent.mzn";
 
 int: n = {n};
+int: n_dep = {len(index_dep_info)};
 int: memsize = {int(sum_sizey / 2)};
 int: max_time = {3 * n + 3 * sum_opcost};
 
@@ -114,13 +126,13 @@ constraint forall(i in 1..n) (
 {leaf_block}
 
 % Non-overlapping constraints
-constraint forall(i, j in 1..n where i < j) (
-    (posX[i] + sizeX[i] <= posX[j]) \/
-    (posX[j] + sizeX[j] <= posX[i]) \/
-    (posY[i] + sizeY[i] <= posY[j]) \/
-    (posY[j] + sizeY[j] <= posY[i])
-);
-% constraint diffn_k(positions, sizes);
+% constraint forall(i, j in 1..n where i < j) (
+%     (posX[i] + sizeX[i] <= posX[j]) \/
+%     (posX[j] + sizeX[j] <= posX[i]) \/
+%     (posY[i] + sizeY[i] <= posY[j]) \/
+%     (posY[j] + sizeY[j] <= posY[i])
+% );
+constraint diffn_k(positions, sizes);
 
 % Total time is the max horizontal usage
 var 1..max_time: total_time;  % Decision variable to be minimized
@@ -140,6 +152,8 @@ solve :: int_search(
 ) minimize total_time;
 % solve minimize total_time;
 
+array[1..n_dep][1..2] of int: index_dep_info;
+
 output [
   "total_time = ", show(total_time), "\\n",
   "positions = [", 
@@ -147,6 +161,9 @@ output [
   "]\\n",
   "sizes = [",
   concat(["[" ++ show(sizeX[i]) ++ "," ++ show(sizeY[i]) ++ "]" ++ if i != n then ", " else "" endif | i in 1..n ]),
+  "]\\n",
+  "dep_info = [",
+  concat(["[" ++ show(index_dep_info[i]) ++ "]" | i in 1..n ]),
   "]\\n",
 ];
 """
